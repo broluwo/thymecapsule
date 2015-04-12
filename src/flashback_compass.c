@@ -4,11 +4,11 @@
 
 static Window *main_window;
 static TextLayer *text_layer;
-static BitmapLayer *bitmap_layer;
 static Layer *arrow_layer;
 static GPath *arrow;
 static Location cur_loc = {0, 0}, goal_loc = {0, 0};
 static int last_heading = 0, new_heading = 0, distance = 0;
+static char buffer[8], number[5];
 
 static const GPathInfo ARROW_POINTS = {
   3,
@@ -23,45 +23,45 @@ static int32_t getDirection() {
   return new_heading;
 }
 
-static int getDistance() {
-  return distance; //(int) (sqrt(pow(goal_loc.y - cur_loc.y, 2) + pow(goal_loc.x - cur_loc.x, 2)));
-}
-
 static void update_screen() {
   // rotate arrow on heading change
   int new_direction = getDirection();
-  gpath_rotate_to(arrow, (new_direction + last_heading) * TRIG_MAX_ANGLE / 360);
-  
-  // DEBUG
-  if (getDirection() == 44) {
-    text_layer_set_text(text_layer, "This is some shit");
-  }
+  static int flag = 0;
+  gpath_rotate_to(arrow, (new_direction - (90 - last_heading)) * TRIG_MAX_ANGLE / 360);
   
   // print distance or nothing found
   if (new_direction == 0) {
     text_layer_set_text(text_layer, "Nothing found");
   } else {
-    char buffer[7], number[5];
-    snprintf(number, sizeof(number), "%d", getDistance());
-    strcpy(buffer, number);
-    //strcpy(buffer + strlen(number), "ft\0");
-    //text_layer_set_text(text_layer, number);
+    if (distance < THRESHOLD) {
+      if (flag == 0) {
+        vibes_short_pulse();
+        flag = 1;
+      }
+      strcpy(buffer, "Arrived");
+    } else {
+      // keep for debugging purposes
+      snprintf(number, sizeof(number), "%d", distance);
+      strcpy(buffer, number);
+      strcpy(buffer + strlen(number), "ft");
+    }
+    text_layer_set_text(text_layer, buffer);
   }
   
   // mark layers to be redrawn
   layer_mark_dirty(arrow_layer);
-  layer_mark_dirty(bitmap_layer_get_layer(bitmap_layer));
   layer_mark_dirty(text_layer_get_layer(text_layer));
 }
 
 static void compass_handler(CompassHeadingData data) {
-  last_heading = data.magnetic_heading;
+  last_heading = data.magnetic_heading * 360 / TRIG_MAX_ANGLE;
   update_screen();
 }
 
 static void arrow_layer_update_callback(Layer *path, GContext *ctx) {
   // draw arrow
-  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_stroke_color(ctx, GColorWhite);
   gpath_draw_filled(ctx, arrow);
   gpath_draw_outline(ctx, arrow);
 }
@@ -200,10 +200,9 @@ static void main_window_load(Window *window) {
   }
   text_layer_set_text(text_layer, "Nothing found");
   text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
-  
-  // create BitmapLayer
-  bitmap_layer = bitmap_layer_create(GRect(0, 0, bounds.size.w, 130));
-  
+  text_layer_set_background_color(text_layer, GColorBlack);
+  text_layer_set_text_color(text_layer, GColorWhite);
+    
   // create arrow layer
   arrow_layer = layer_create(bounds);
   layer_set_update_proc(arrow_layer, arrow_layer_update_callback);
@@ -215,14 +214,13 @@ static void main_window_load(Window *window) {
   
   // add as children
   layer_add_child(window_layer, text_layer_get_layer(text_layer));
-  layer_add_child(window_layer, bitmap_layer_get_layer(bitmap_layer));
   layer_add_child(window_layer, arrow_layer);
 }
 
 static void main_window_unload(Window *window) {
 	// destroy main_window children
   text_layer_destroy(text_layer);
-  bitmap_layer_destroy(bitmap_layer);
+  layer_destroy(arrow_layer);
 }
 
 void init(void) {
@@ -246,10 +244,12 @@ void init(void) {
     .load = main_window_load,
     .unload = main_window_unload,
   });
+  window_set_background_color(main_window, GColorBlack);
   window_stack_push(main_window, true);
 }
 
 void deinit(void) {
+  compass_service_unsubscribe();
   window_destroy(main_window);
 }
 
