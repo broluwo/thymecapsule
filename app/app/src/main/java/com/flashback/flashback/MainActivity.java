@@ -30,35 +30,39 @@ import android.view.View;
 import android.widget.Toast;
 
 import com.astuetz.PagerSlidingTabStrip;
-import com.fasterxml.jackson.core.JsonGenerator;
+import com.getpebble.android.kit.util.PebbleDictionary;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.UUID;
 
 import de.undercouch.bson4jackson.BsonFactory;
+import de.undercouch.bson4jackson.BsonGenerator;
 
 public class MainActivity extends ActionBarActivity implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     private static final int REQUEST_IMAGE_CAPTURE = 1;
     private static final int REQUEST_VIDEO_CAPTURE = 2;
+    private static final UUID FLASHBACK_UUID = UUID.fromString("17f9ca76-e224-40c7-9477-9e991df39ca4");
+    private PebbleDictionary pebbleDictionary;
 
     private Location location = null;
     private SharedPreferences sharedPrefs;
-    private String user_uuid = null;
+    public String user_uuid = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        pebbleDictionary = new PebbleDictionary();
 
         ViewPager viewPager = (ViewPager) findViewById(R.id.viewPager);
         viewPager.setAdapter(new MainPagerAdapter(getSupportFragmentManager(), this));
@@ -78,6 +82,10 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
         LocationListener locationListener = new LocationListener() {
             public void onLocationChanged(Location location) {
                 MainActivity.this.location = location;
+                // Locate closest content
+                // Determine if it is within larger threshold
+                //      If it is, then push 5 pieces of data to Pebble
+                // Notify user they are in vicinity of some content
             }
 
             public void onStatusChanged(String provider, int status, Bundle extras) {}
@@ -88,7 +96,7 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
         };
 
         // Register the listener with the Location Manager to receive location updates
-        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, locationListener);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);
 
         sharedPrefs = getSharedPreferences(String.valueOf(R.string.shared_prefs_key), Context.MODE_PRIVATE);
         user_uuid = sharedPrefs.getString(String.valueOf(R.string.user_uuid), null);
@@ -119,11 +127,10 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
                 new SendPictureTask(user_uuid).execute(imageCapsule);
             } else if (requestCode == REQUEST_VIDEO_CAPTURE) {
                 Uri videoUri = data.getData();
-                File videoFile = new File(videoUri.getPath());
-                FileInputStream videoInputStream = null;
+                InputStream videoInputStream = null;
 
                 try {
-                    videoInputStream = new FileInputStream(videoFile);
+                    videoInputStream = getContentResolver().openInputStream(videoUri);
                     VideoDetailed videoCapsule = new VideoDetailed(videoInputStream, location);
 
                     new SendVideoTask(user_uuid).execute(videoCapsule);
@@ -291,10 +298,10 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
                     connection.setRequestProperty("Content-Type", "application/bson");
                     connection.setRequestMethod("POST");
 
-                    OutputStreamWriter outputStream = new OutputStreamWriter(connection.getOutputStream());
+                    //OutputStreamWriter outputStream = new OutputStreamWriter(connection.getOutputStream());
 
                     BsonFactory factory = new BsonFactory();
-                    JsonGenerator gen = factory.createGenerator(outputStream);
+                    BsonGenerator gen = factory.createJsonGenerator(connection.getOutputStream());
 
                     gen.writeStartObject();
 
@@ -313,11 +320,11 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
                     gen.writeEndObject();
 
                     gen.close();
-                    outputStream.flush();
+                    //outputStream.flush();
 
                     if (connection.getResponseCode() == HttpURLConnection.HTTP_INTERNAL_ERROR) {
                         return "Error occurred on server when sending picture";
-                    } else if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                    } else if (connection.getResponseCode() == HttpURLConnection.HTTP_CREATED) {
                         return "Picture successfully sent!";
                     } else {
                         return "Error: HTTP Code " + connection.getResponseCode();
@@ -341,10 +348,10 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
     }
 
     private class VideoDetailed {
-        private FileInputStream videoStream;
+        private InputStream videoStream;
         private Location loc;
 
-        public VideoDetailed(FileInputStream videoStream, Location loc) {
+        public VideoDetailed(InputStream videoStream, Location loc) {
             this.videoStream = videoStream;
             this.loc = loc;
         }
@@ -371,14 +378,14 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
                 try {
                     URL url = new URL("http://bitcmp.ngrok.com/cap/vid");
                     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                    OutputStreamWriter outputStream = new OutputStreamWriter(connection.getOutputStream());
+                    // OutputStreamWriter outputStream = new OutputStreamWriter(connection.getOutputStream());
 
                     connection.setDoOutput(true);
                     connection.setRequestMethod("POST");
                     connection.setRequestProperty("Content-Type", "application/bson");
 
                     BsonFactory factory = new BsonFactory();
-                    JsonGenerator gen = factory.createJsonGenerator(outputStream);
+                    BsonGenerator gen = factory.createJsonGenerator(connection.getOutputStream());
 
                     gen.writeStartObject();
 
@@ -392,16 +399,20 @@ public class MainActivity extends ActionBarActivity implements GoogleApiClient.C
                     gen.writeNumber(videoDetaileds[0].getLong());
 
                     gen.writeFieldName("payload");
-                    gen.writeBinary(videoDetaileds[0].videoStream, -1);
+
+                    byte[] buffer = new byte[2048];
+                    while (videoDetaileds[0].videoStream.read(buffer, 0, buffer.length) != -1) {
+                        gen.writeBinary(buffer);
+                    }
 
                     gen.writeEndObject();
 
                     gen.close();
-                    outputStream.flush();
+                    //outputStream.flush();
 
                     if (connection.getResponseCode() == HttpURLConnection.HTTP_INTERNAL_ERROR) {
                         return "Error occurred on server when sending video";
-                    } else if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                    } else if (connection.getResponseCode() == HttpURLConnection.HTTP_CREATED) {
                         return "Video successfully sent!";
                     } else {
                         return "Error: HTTP Code " + connection.getResponseCode();

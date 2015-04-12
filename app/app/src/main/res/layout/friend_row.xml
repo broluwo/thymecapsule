@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/friendName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentLeft="true" />
+
+    <View
+        android:id="@+id/acceptBox"
+        android:layout_width="wrap_content"
+        android:layout_height="fill_parent"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:background="@android:color/holo_green_light"
+        android:visibility="invisible">
+
+        <IconTextView
+            android:text="{fa-check}"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+    </View>
+
+    <View
+        android:id="@+id/declineBox"
+        android:layout_width="wrap_content"
+        android:layout_height="fill_parent"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:background="@android:color/holo_red_light"
+        android:visibility="invisible">
+
+        <IconTextView
+            android:text="{fa-close}"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+    </View>
+
+</RelativeLayout>
